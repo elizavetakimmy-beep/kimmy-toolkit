@@ -17,10 +17,12 @@
 
 ## Установка
 
-В Claude Code выполни две команды:
+**В обычном Claude (сайт или приложение):** скачай архив нужного скилла из папки [zips](zips/), распакуй и загрузи папку в настройках Claude (Настройки → Возможности → Навыки). Можно ставить по одному, только те, что нужны.
+
+**В Claude Code** — весь набор двумя командами:
 
 ```
-/plugin marketplace add <ссылка на GitHub-репозиторий>
+/plugin marketplace add elizavetakimmy-beep/kimmy-toolkit
 /plugin install kimmy-toolkit@kimmy
 ```
 
