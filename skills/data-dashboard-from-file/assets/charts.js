@@ -80,9 +80,14 @@ function groupedBar(container, data, opts = {}) {
   data.forEach((d, i) => {
     const cx = pl + grp * i + grp / 2;
     [[opts.aLabel || "план", d.a, "bar-plan"], [opts.bLabel || "факт", d.b, "bar-fact"]].forEach((pp, j) => {
-      const v = pp[1] || 0, h = Math.max(2, ih * v / max), y = pt + ih - h, x = cx - bw - 1 + j * (bw + 2);
+      const v = pp[1], x = cx - bw - 1 + j * (bw + 2);
+      if (v == null || isNaN(v)) {          // числа нет в источнике — столбик не рисуем, ставим «—»
+        g += `<text class="lbl" x="${x + bw / 2}" y="${pt + ih - 5}" text-anchor="middle" style="font-size:10px;opacity:.45">—</text>`;
+        return;
+      }
+      const h = Math.max(2, ih * v / max), y = pt + ih - h;
       g += `<rect class="${pp[2]}" x="${x}" y="${y}" width="${bw}" height="${h}" rx="4" data-l="${(d.full || d.label)} · ${pp[0]}" data-v="${fmt(v)}"></rect>`;
-      g += `<text class="lbl" x="${x + bw / 2}" y="${y - 5}" text-anchor="middle" style="font-size:10px">${v}</text>`;
+      g += `<text class="lbl" x="${x + bw / 2}" y="${y - 5}" text-anchor="middle" style="font-size:10px">${fmt(v)}</text>`;
     });
     g += `<text class="axis" x="${cx}" y="${H - 9}" text-anchor="middle">${d.label}</text>`;
   });
@@ -93,23 +98,32 @@ function groupedBar(container, data, opts = {}) {
   });
 }
 
-/* ---- line chart ---- data: [{label, value, full?}]  opts: {fmt} */
+/* ---- line chart ---- data: [{label, value, full?}]  opts: {fmt}
+   Пропуски остаются на оси, линия на них РВЁТСЯ: соединить апрель с июнем через пустой май
+   значит выдумать май. */
 function lineChart(container, data, opts = {}) {
-  const fmt = opts.fmt || fmtInt, d = data.filter(x => x.value != null && !isNaN(x.value));
+  const fmt = opts.fmt || fmtInt;
+  const has = x => x.value != null && !isNaN(x.value);
+  const d = data, vals = d.filter(has).map(x => x.value);
   const W = 380, H = 200, pl = 8, pr = 10, pt = 22, pb = 26, iw = W - pl - pr, ih = H - pt - pb;
   const c = el(container);
-  if (d.length < 2) { c.innerHTML = `<svg viewBox="0 0 ${W} ${H}"><text class="axis" x="${W / 2}" y="${H / 2}" text-anchor="middle">мало данных</text></svg>`; return; }
-  const max = Math.max(...d.map(x => x.value)), min = Math.min(...d.map(x => x.value), 0);
+  if (vals.length < 2) { c.innerHTML = `<svg viewBox="0 0 ${W} ${H}"><text class="axis" x="${W / 2}" y="${H / 2}" text-anchor="middle">мало данных</text></svg>`; return; }
+  const max = Math.max(...vals), min = Math.min(...vals, 0);
   const X = i => pl + iw * i / (d.length - 1), Y = v => pt + ih - ih * (v - min) / ((max - min) || 1);
   let g = "";
   for (let i = 0; i <= 3; i++) { const y = pt + ih - ih * i / 3;
     g += `<line class="gridline" x1="${pl}" y1="${y}" x2="${W - pr}" y2="${y}"/><text class="axis" x="${pl}" y="${y - 3}">${fmtK(min + (max - min) * i / 3)}</text>`; }
-  const line = d.map((x, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(x.value).toFixed(1)}`).join(" ");
-  const area = `M${X(0)} ${pt + ih} ` + d.map((x, i) => `L${X(i).toFixed(1)} ${Y(x.value).toFixed(1)}`).join(" ") + ` L${X(d.length - 1)} ${pt + ih} Z`;
-  g += `<path class="lp-area" d="${area}"/><path class="lp" d="${line}"/>`;
+  let open = false, line = "";
+  d.forEach((x, i) => { if (!has(x)) { open = false; return; }
+    line += `${open ? "L" : "M"}${X(i).toFixed(1)} ${Y(x.value).toFixed(1)} `; open = true; });
+  g += `<path class="lp" d="${line.trim()}"/>`;
   d.forEach((x, i) => {
-    g += `<circle class="ldot" cx="${X(i).toFixed(1)}" cy="${Y(x.value).toFixed(1)}" r="4" data-l="${x.full || x.label}" data-v="${fmt(x.value)}"></circle>`;
-    if (d.length <= 8) g += `<text class="lbl" x="${X(i)}" y="${Y(x.value) - 9}" text-anchor="middle">${fmtK(x.value)}</text>`;
+    if (has(x)) {
+      g += `<circle class="ldot" cx="${X(i).toFixed(1)}" cy="${Y(x.value).toFixed(1)}" r="4" data-l="${x.full || x.label}" data-v="${fmt(x.value)}"></circle>`;
+      if (d.length <= 8) g += `<text class="lbl" x="${X(i)}" y="${Y(x.value) - 9}" text-anchor="middle">${fmtK(x.value)}</text>`;
+    } else {
+      g += `<text class="lbl" x="${X(i)}" y="${pt + ih - 6}" text-anchor="middle" style="opacity:.45">—</text>`;
+    }
     g += `<text class="axis" x="${X(i)}" y="${H - 9}" text-anchor="middle">${x.label}</text>`;
   });
   c.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
@@ -132,17 +146,25 @@ function hbars(container, items, opts = {}) {
   }).join("");
 }
 
-/* ---- funnel ---- stages: [{name, value}]  opts: {fmt}  (0-value stage renders empty/dashed) */
+/* ---- funnel ---- stages: [{name, value}]  opts: {fmt}
+   null = не измеряется (пишем «нет данных»), 0 = измеряли и получили ноль. Это разные вещи. */
 function funnel(container, stages, opts = {}) {
-  const fmt = opts.fmt || fmtInt, max = Math.max(...stages.map(s => s.value), 1);
+  const fmt = opts.fmt || fmtInt;
+  const has = v => v != null && !isNaN(v);
+  const max = Math.max(...stages.filter(s => has(s.value)).map(s => s.value), 1);
   let h = "";
   stages.forEach((s, i) => {
-    const w = Math.max(26, s.value / max * 100);
-    h += `<div class="fn-stage ${s.value === 0 ? "empty" : ""}" style="width:${w}%"><span class="fn-name">${s.name}</span><span class="fn-val tnum">${fmt(s.value)}</span></div>`;
+    const known = has(s.value);
+    const w = known ? Math.max(26, s.value / max * 100) : 100;
+    h += `<div class="fn-stage ${known ? (s.value === 0 ? "empty" : "") : "empty"}" style="width:${w}%"><span class="fn-name">${s.name}</span><span class="fn-val tnum">${known ? fmt(s.value) : "— нет данных"}</span></div>`;
     if (i < stages.length - 1) {
-      const conv = s.value > 0 ? stages[i + 1].value / s.value * 100 : 0;
-      const cs = (conv > 0 && conv < 10) ? conv.toFixed(conv < 1 ? 2 : 1).replace(".", ",") : Math.round(conv);
-      h += `<div class="fn-conv">↓ дальше доходит <b>${cs}%</b></div>`;
+      const nxt = stages[i + 1].value;
+      if (!known || !has(nxt)) h += `<div class="fn-conv">↓ конверсию не посчитать — шаг не измеряется</div>`;
+      else if (s.value > 0) {
+        const conv = nxt / s.value * 100;
+        const cs = (conv > 0 && conv < 10) ? conv.toFixed(conv < 1 ? 2 : 1).replace(".", ",") : Math.round(conv);
+        h += `<div class="fn-conv">↓ дальше доходит <b>${cs}%</b></div>`;
+      } else h += `<div class="fn-conv">↓ конверсию не посчитать — на входе 0</div>`;
     }
   });
   el(container).innerHTML = h;

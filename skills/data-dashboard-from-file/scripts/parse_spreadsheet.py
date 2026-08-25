@@ -27,7 +27,7 @@ import sys
 import csv
 import argparse
 
-ERROR_MARKERS = ("#REF", "#DIV", "#VALUE", "#N/A", "#NAME", "#NULL", "#NUM")
+ERROR_MARKERS = ("#REF", "#DIV", "#VALUE", "#N/A", "#NAME", "#NULL", "#NUM", "#FORMULA")
 
 
 def clean_number(v):
@@ -47,7 +47,7 @@ def clean_number(v):
     for junk in ("₽", "р.", "руб", "$", "€", "%"):
         s = s.replace(junk, "")
     # normalize spaces (regular, non-breaking, thin) and comma decimals
-    s = s.replace("\xa0", " ").replace(" ", " ").replace(" ", "")
+    s = s.replace("\xa0", " ").replace("\u202f", " ").replace("\u2007", " ").replace("\u2009", " ").replace(" ", "")
     s = s.replace(",", ".")
     if s in ("", "-", ".", "—", "–"):
         return None
@@ -63,27 +63,66 @@ def is_percent(v):
 
 
 def load(path):
-    """Load a CSV (-> list of rows) or .xlsx (-> dict of sheetname -> rows).
+    """Загружает CSV/TSV (-> список строк) или .xlsx (-> {лист: строки}).
 
-    Cells come back as raw strings/values; run them through clean_number()
-    when you need numbers. xlsx uses openpyxl with data_only=True so formula
-    cells return their last cached computed value.
+    Русский Excel по умолчанию сохраняет CSV в cp1251 и с разделителем ";" —
+    и кодировка, и разделитель определяются автоматически. Формулы в .xlsx
+    читаются как последнее посчитанное Excel значение; если значения нет,
+    ячейка помечается "#FORMULA_NOT_CACHED", а не молча становится пустой.
     """
     low = path.lower()
+
+    if low.endswith(".xls"):
+        raise SystemExit(
+            "Это файл старого формата .xls. Открой его в Excel или Google Таблицах\n"
+            "и сохрани как .xlsx (Файл -> Сохранить как -> Книга Excel (.xlsx)),\n"
+            "потом запусти скилл на новом файле."
+        )
+
     if low.endswith((".xlsx", ".xlsm", ".xltx")):
-        import openpyxl  # pip install openpyxl if missing
-        wb = openpyxl.load_workbook(path, data_only=True)
+        try:
+            import openpyxl
+        except ImportError:
+            raise SystemExit(
+                "Не хватает библиотеки openpyxl — без неё не прочитать Excel-файл.\n"
+                "Установи её командой:  pip install openpyxl\n"
+                "(или: python3 -m pip install openpyxl)"
+            )
+        vals = openpyxl.load_workbook(path, data_only=True)
+        frms = openpyxl.load_workbook(path, data_only=False)
         out = {}
-        for ws in wb.worksheets:
-            out[ws.title] = [
-                [ws.cell(r, c).value for c in range(1, ws.max_column + 1)]
-                for r in range(1, ws.max_row + 1)
-            ]
+        for ws in vals.worksheets:
+            fs = frms[ws.title]
+            rows = []
+            for r in range(1, ws.max_row + 1):
+                row = []
+                for c in range(1, ws.max_column + 1):
+                    v = ws.cell(r, c).value
+                    if v is None:
+                        f = fs.cell(r, c).value
+                        if isinstance(f, str) and f.startswith("="):
+                            v = "#FORMULA_NOT_CACHED"
+                    row.append(v)
+                rows.append(row)
+            out[ws.title] = rows
         return out
-    # CSV / TSV
-    delim = "\t" if low.endswith(".tsv") else ","
-    with open(path, encoding="utf-8-sig") as f:
-        return list(csv.reader(f, delimiter=delim))
+
+    # CSV / TSV: подбираем кодировку и разделитель
+    raw = open(path, "rb").read()
+    for enc in ("utf-8-sig", "cp1251", "utf-16"):
+        try:
+            text = raw.decode(enc)
+            break
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    else:
+        raise SystemExit(
+            "Не удалось определить кодировку файла. Пересохрани его как\n"
+            "CSV UTF-8 или как .xlsx и запусти скилл заново."
+        )
+    head = "\n".join(text.splitlines()[:5])
+    delim = "\t" if low.endswith(".tsv") else (";" if head.count(";") > head.count(",") else ",")
+    return list(csv.reader(text.splitlines(), delimiter=delim))
 
 
 def _fmt_cell(v):

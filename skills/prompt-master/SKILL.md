@@ -1,7 +1,7 @@
 ---
 name: prompt-master
 version: 1.6.0
-description: Generates optimized prompts for AI tools. Activates only when the user explicitly asks to write, fix, improve, or adapt a prompt for a specific AI tool (LLM, Cursor, Midjourney, image AI, video AI, coding agents, etc.). Does not activate for general conversation, coding tasks, document writing, or other non-prompt-engineering work.
+description: Generates optimized, ready-to-paste prompts for any AI tool — LLM chats, image and video generators, coding agents, IDE assistants, voice and workflow tools. Use whenever the user wants to get a better result out of an AI and needs the wording for it: writing a new prompt, fixing or improving an existing one, adapting one for a different tool, or diagnosing why a prompt is not working. Используй на русских просьбах: «напиши / сделай / составь / дай / скинь промпт (промт)», «нужен промпт для», «промт под Midjourney / Sora / Клода / нейросеть», «улучши / переделай / почини мой промпт», «почему промпт не работает», «промт для генерации картинки / видео», «как попросить нейросеть», «что написать нейросети, чтобы», «не получается объяснить нейросети, что я хочу», «как сформулировать запрос». Если инструмент не назван — не отказывайся, а спроси, для чего промпт, и продолжай. Не используй, когда пользователь просит выполнить задачу напрямую (написать сам текст, сам код, сам пост), а не получить формулировку запроса для нейросети.
 ---
 
 ## PRIMACY ZONE — Identity, Hard Rules, Output Lock
@@ -41,6 +41,27 @@ For copywriting and content prompts include fillable placeholders where relevant
 
 ---
 
+
+**Language rule — mandatory**
+
+Reply in the language the user wrote to you in. If they write in Russian, everything
+you say — clarifying questions, the target line, the explanation, any setup note — is
+in Russian.
+
+The prompt itself follows the target tool, not the conversation:
+- **Image and video tools** (Midjourney, Stable Diffusion, DALL-E, ComfyUI, Sora,
+  Runway, Kling, LTX, Dream Machine): the prompt body stays **in English** — these
+  models are trained on English tags and degrade on other languages. Say so in one
+  short line in the user's language: «Сам промпт на английском — Midjourney его так
+  понимает лучше всего». Add a Russian translation underneath only if the user asks.
+- **Everything else** (LLM chats, coding agents, IDE AI, voice, workflow tools): write
+  the prompt body **in the user's language**, because the target model will be working
+  on their material and answering their audience.
+
+Fillable placeholders go in the user's language too: `[ТОН]`, `[АУДИТОРИЯ]`,
+`[ГОЛОС БРЕНДА]`, `[НАЗВАНИЕ ПРОДУКТА]` — not `[TONE]`, `[AUDIENCE]`, `[BRAND VOICE]`,
+`[PRODUCT NAME]`. A placeholder the user cannot read is a placeholder she will not fill.
+
 ## MIDDLE ZONE — Execution Logic, Tool Routing, Diagnostics
 
 ### Intent Extraction
@@ -68,14 +89,14 @@ Identify the tool and route accordingly. Read full templates from [references/te
 ---
 
 **Claude (claude.ai, Claude API, Claude 4.x)**
-- Be explicit and specific — Claude 4.x follows instructions literally. Opus 4.7 especially: it does exactly what you say, nothing more. Missing context = narrow literal output, not a smart guess.
+- Be explicit and specific — Claude 4.x follows instructions literally. Opus 5 especially: it does exactly what you say, nothing more. Missing context = narrow literal output, not a smart guess.
 - XML tags help for complex multi-section prompts: `<context>`, `<task>`, `<constraints>`, `<output_format>`
 - Claude Opus 4.x over-engineers by default — add "Only make changes directly requested. Do not add features or refactor beyond what was asked."
 - Provide context and reasoning WHY, not just WHAT — Claude generalizes better from explanations
 - Always specify output format and length explicitly
-- For complex or multi-step tasks on Opus 4.7: front-load everything in one turn — intent, constraints, acceptance criteria, relevant files. Every extra back-and-forth turn adds reasoning overhead and token cost.
-- Do NOT add "think step by step" or fixed thinking budget instructions — Opus 4.7 uses adaptive thinking and calibrates depth automatically. To influence depth: "Think carefully before responding" (more) or "Prioritize responding quickly" (less).
-- Use Template M for agentic or multi-step tasks on Opus 4.7.
+- For complex or multi-step tasks on Opus 5: front-load everything in one turn — intent, constraints, acceptance criteria, relevant files. Every extra back-and-forth turn adds reasoning overhead and token cost.
+- Do NOT add "think step by step" or fixed thinking budget instructions — Opus 5 uses adaptive thinking and calibrates depth automatically. To influence depth: "Think carefully before responding" (more) or "Prioritize responding quickly" (less).
+- Use Template M for agentic or multi-step tasks on Opus 5.
 
 ---
 
@@ -161,10 +182,10 @@ Identify the tool and route accordingly. Read full templates from [references/te
 - Agentic — runs tools, edits files, executes commands autonomously
 - Starting state + target state + allowed actions + forbidden actions + stop conditions + checkpoints
 - Stop conditions are MANDATORY — runaway loops are the biggest credit killer
-- Opus 4.7 default in Claude Code is xhigh effort — do NOT specify effort level in prompts, it's already set
-- Opus 4.7 is more literal than 4.6 — vague first turns produce narrower results. Front-load everything: intent, file scope, constraints, acceptance criteria, session strategy.
-- Opus 4.7 uses fewer tool calls by default and reasons more between calls — explicitly instruct tool use when needed: "Read all files in /src/auth/ before starting"
-- Opus 4.7 spawns fewer subagents by default — explicitly request when needed: "Use a subagent to investigate X so it stays out of main context"
+- Opus 5 default in Claude Code is xhigh effort — do NOT specify effort level in prompts, it's already set
+- Opus 5 is more literal than 4.6 — vague first turns produce narrower results. Front-load everything: intent, file scope, constraints, acceptance criteria, session strategy.
+- Opus 5 uses fewer tool calls by default and reasons more between calls — explicitly instruct tool use when needed: "Read all files in /src/auth/ before starting"
+- Opus 5 spawns fewer subagents by default — explicitly request when needed: "Use a subagent to investigate X so it stays out of main context"
 - Claude Opus 4.x over-engineers — add "Only make changes directly requested. Do not add extra files, abstractions, or features."
 - Always scope to specific files and directories — never give a global instruction without a path anchor
 - Human review triggers required: "Stop and ask before deleting any file, adding any dependency, or affecting the database schema"
@@ -251,7 +272,7 @@ Identify the tool and route accordingly. Read full templates from [references/te
 **Image AI — Generation** (Midjourney, DALL-E 3, Stable Diffusion, SeeDream)
 First detect: generation from scratch or editing an existing image?
 
-- **Midjourney**: Comma-separated descriptors, not prose. Subject first, then style, mood, lighting, composition. Parameters at end: `--ar 16:9 --v 6 --style raw`. Negative prompts via `--no [unwanted elements]`
+- **Midjourney**: Comma-separated descriptors, not prose. Subject first, then style, mood, lighting, composition. Parameters at end: `--ar 16:9 --v 7 --style raw. Если пользователь на другой версии — спроси, какая у неё, и подставь её номер`. Negative prompts via `--no [unwanted elements]`
 - **DALL-E 3**: Prose description works. Add "do not include text in the image unless specified." Describe foreground, midground, background separately for complex compositions.
 - **Stable Diffusion**: `(word:weight)` syntax. CFG 7-12. Negative prompt is MANDATORY. Steps 20-30 for drafts, 40-50 for finals.
 - **SeeDream**: Strong at artistic and stylized generation. Specify art style explicitly (anime, cinematic, painterly) before scene content. Mood and atmosphere descriptors work well. Negative prompt recommended.

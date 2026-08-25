@@ -9,7 +9,7 @@ description: >-
   to show a client or boss. Trigger even if the user doesn't say the word
   "dashboard": phrases like "сделай из этого файла красиво", "покажи наглядно",
   "нужен отчёт по этой таблице", "визуализируй эти данные", "build me a dashboard
-  from this xlsx" all count. Handles messy real-world spreadsheets (merged
+  from this xlsx" all count. Работает и с гугл-таблицами (Google Sheets, Гугл-таблица, .numbers) — попроси пользователя выгрузить лист в .xlsx или .csv, если файла ещё нет. Handles messy real-world spreadsheets (merged
   headers, Plan/Fact/Diff columns, month×week layouts, #REF!/#DIV/0! errors,
   Russian number formats). Produces one shareable .html file plus a published
   link.
@@ -24,6 +24,23 @@ The golden rule that runs through everything here: **the dashboard reflects the
 file exactly — never invent, fill, or smooth over missing numbers.** People trust
 these dashboards to make decisions. A blank cell stays blank ("—"), and you say
 so plainly. Honesty is the feature.
+
+## Где это работает
+
+Скилл рассчитан на среду, где можно запускать Python и открывать локальные файлы
+(Claude Code, десктоп с включённым исполнением кода). **Перед шагом 5 проверь, есть
+ли у тебя возможность запустить команду и посмотреть результат в браузере.**
+
+Если запускать скрипты негде (обычное приложение или сайт Claude):
+- шаги 1–3 делай через доступный тебе разбор файла — структуру, чистку чисел и
+  проверку агрегатов выполняй теми же правилами из `references/honesty-and-data.md`,
+  просто без `parse_spreadsheet.py`;
+- шаг 5 (`serve.py` + скриншот) **пропусти целиком** — не пытайся запустить сервер
+  и не обещай пользователю превью;
+- на шаге 6 отдай готовый .html как артефакт и **сразу скажи**, что локальной копии
+  на диске не будет: «Файл можно скачать из артефакта и сохранить себе».
+
+Никогда не объявляй шаг выполненным, если ты его не выполнил.
 
 ## The workflow
 
@@ -43,7 +60,10 @@ read it once at the start; the summary below is the map.
    correctly. Missing → `null`, never `0`.
 
 3. **Verify the numbers before drawing anything.** Print the key aggregates and a
-   few rows and eyeball them against the file. Catching a parsing bug here costs
+   few rows and eyeball them against the file. Сверяться нужно с самим файлом, а не
+   с собственным разбором: `--inspect` использует тот же загрузчик, поэтому ошибка
+   чтения через него не видна. Отдельно проверь, нет ли в дампе
+   `#FORMULA_NOT_CACHED` — см. `references/honesty-and-data.md`. Catching a parsing bug here costs
    seconds; catching it after the dashboard is built and shared costs trust.
 
 4. **Build the page** from `assets/dashboard.css` + `assets/charts.js`, assembling
@@ -83,6 +103,21 @@ carries the theme (light + dark) and all component styles. Read the top of each
 file — they document their own inputs.
 
 ## Design defaults
+
+- **Отрицательные значения — не в `barChart` и не в `hbars`.** Обе рисуют минус как
+  двухпиксельный огрызок у нуля, визуально неотличимый от «почти ноль». Разницу
+  план-факт показывай через `groupedBar` (два столбика рядом) или таблицей с
+  цветным знаком — никогда одним столбиком.
+- **Валюта и язык — из исходных данных, не по умолчанию.** `fmtRub` в charts.js
+  дописывает «₽» безусловно, а `clean_number` спокойно съедает `$` и `€` — значит
+  долларовый бюджет распарсится и будет подписан рублями. Перед сборкой страницы
+  посмотри, какая валюта в файле, и если это не рубль — сделай свой форматтер:
+  `const fmtMoney = v => RU.format(Math.round(v)) + " $";`. Если валюта в файле
+  не указана вовсе — спроси пользователя, не угадывай.
+  Так же и с языком: подписи осей, «план/факт» и заголовки держи на языке исходной
+  таблицы. Зашитые в charts.js русские строки («мало данных», «дальше доходит»,
+  «план», «факт», «млн», «к») для нерусской таблицы нужно перекрыть через `opts`
+  или поправить в инлайненной копии скрипта.
 
 - **One self-contained .html file.** Inline all CSS and JS, draw charts as SVG in
   vanilla JS. No CDNs, no external fonts, no fetch — it must work offline and
